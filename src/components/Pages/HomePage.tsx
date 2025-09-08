@@ -3,7 +3,7 @@ import { Plus, Hash, MessageCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useChat } from '../../contexts/ChatContext';
 import { useRouter } from '../../hooks/useRouter';
-import { StorageService } from '../../utils/storage';
+import { ChatService } from '../../services/chatService';
 
 export const HomePage: React.FC = () => {
   const { user, logout } = useAuth();
@@ -37,7 +37,7 @@ export const HomePage: React.FC = () => {
     setJoinError('');
     try {
       // Check if room exists
-      const room = StorageService.getRoomById(joinRoomId.trim());
+      const room = await ChatService.getRoomById(joinRoomId.trim());
       if (!room) {
         setJoinError('Room not found');
         return;

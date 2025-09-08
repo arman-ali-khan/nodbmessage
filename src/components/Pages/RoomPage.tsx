@@ -4,7 +4,7 @@ import { useRouter } from '../../hooks/useRouter';
 import { useChat } from '../../contexts/ChatContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ChatWindow } from '../Chat/ChatWindow';
-import { StorageService } from '../../utils/storage';
+import { ChatService } from '../../services/chatService';
 
 export const RoomPage: React.FC = () => {
   const { params, navigateToHome } = useRouter();
@@ -23,7 +23,7 @@ export const RoomPage: React.FC = () => {
 
       try {
         // Check if room exists
-        const room = StorageService.getRoomById(params.roomId);
+        const room = await ChatService.getRoomById(params.roomId);
         if (!room) {
           setError('Room not found');
           setIsJoining(false);

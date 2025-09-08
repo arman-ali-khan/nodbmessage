@@ -3,6 +3,8 @@ import { ChatRoom, Message, User, ChatContextType } from '../types';
 import { StorageService } from '../utils/storage';
 import { EncryptionService } from '../utils/encryption';
 import { useAuth } from './AuthContext';
+import { ChatService } from '../services/chatService';
+import { AuthService } from '../services/authService';
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
@@ -82,28 +84,24 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   };
 
   const loadParticipants = (room: ChatRoom) => {
-    const roomParticipants = room.participants
-      .map(id => StorageService.getUserById(id))
-      .filter(Boolean) as User[];
-    setParticipants(roomParticipants);
+    // Load participants from Supabase
+    ChatService.getRoomParticipants(room.id).then(participants => {
+      setParticipants(participants);
+    });
   };
 
   const joinRoom = async (roomId: string): Promise<boolean> => {
     try {
       if (!user) return false;
 
-      const room = StorageService.getRoomById(roomId);
+      // Get room from Supabase
+      const room = await ChatService.getRoomById(roomId);
       if (!room) return false;
 
-      // Check if room is full
-      if (room.participants.length >= room.maxParticipants && !room.participants.includes(user.id)) {
-        throw new Error('Room is full');
-      }
-
-      // Add user to room if not already a participant
-      if (!room.participants.includes(user.id)) {
-        room.participants.push(user.id);
-        StorageService.saveRoom(room);
+      // Try to join room
+      const joinResult = await ChatService.joinRoom(roomId, user.id);
+      if (!joinResult.success) {
+        throw new Error(joinResult.error || 'Failed to join room');
       }
 
       // Generate or get room encryption key
@@ -127,11 +125,8 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   const leaveRoom = () => {
     if (currentRoom && user) {
-      const updatedRoom = {
-        ...currentRoom,
-        participants: currentRoom.participants.filter(id => id !== user.id)
-      };
-      StorageService.saveRoom(updatedRoom);
+      // Leave room in Supabase
+      ChatService.leaveRoom(currentRoom.id, user.id);
     }
     
     setCurrentRoom(null);
@@ -176,32 +171,24 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const createRoom = async (name: string, maxParticipants: number): Promise<ChatRoom> => {
     if (!user) throw new Error('User not authenticated');
 
-    const room: ChatRoom = {
-      id: StorageService.generateId(),
-      name,
-      createdBy: user.id,
-      participants: [user.id],
-      maxParticipants,
-      createdAt: new Date().toISOString(),
-      inviteCode: StorageService.generateInviteCode(),
-    };
-
-    StorageService.saveRoom(room);
+    const result = await ChatService.createRoom(name, maxParticipants, user.id);
+    if (!result.success || !result.room) {
+      throw new Error(result.error || 'Failed to create room');
+    }
 
     // Generate room encryption key
     const roomKey = await EncryptionService.generateKey();
     const roomKeyString = await EncryptionService.exportKey(roomKey);
-    StorageService.saveRoomKey(room.id, roomKeyString);
+    StorageService.saveRoomKey(result.room.id, roomKeyString);
 
-    return room;
+    return result.room;
   };
 
   const generateInviteLink = (roomId: string): string => {
-    const room = StorageService.getRoomById(roomId);
-    if (!room) throw new Error('Room not found');
+    if (!currentRoom) throw new Error('Room not found');
     
     const baseUrl = window.location.origin + window.location.pathname;
-    return `${baseUrl}?invite=${room.inviteCode}`;
+    return `${baseUrl}?invite=${currentRoom.inviteCode}`;
   };
 
   return (

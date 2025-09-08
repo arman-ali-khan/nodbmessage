@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRouter } from './useRouter';
-import { StorageService } from '../utils/storage';
+import { ChatService } from '../services/chatService';
 
 export const useInviteHandler = () => {
   const { user } = useAuth();
@@ -19,7 +19,7 @@ export const useInviteHandler = () => {
       
       if (inviteCode) {
         // Find room by invite code
-        const room = StorageService.getRoomByInviteCode(inviteCode);
+        const room = await ChatService.getRoomByInviteCode(inviteCode);
         
         if (room) {
           // Check if room is not full

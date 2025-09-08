@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
-import { StorageService } from '../utils/storage';
-import { EncryptionService } from '../utils/encryption';
+import { AuthService } from '../services/authService';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -23,7 +22,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     // Check for existing session
-    const currentUser = StorageService.getCurrentUser();
+    const currentUser = JSON.parse(localStorage.getItem('chat_current_user') || 'null');
     if (currentUser) {
       setUser(currentUser);
     }
@@ -34,30 +33,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
 
-      // Check if username already exists
-      const existingUser = StorageService.getUserByUsername(username);
-      if (existingUser) {
-        throw new Error('Username already exists');
+      const result = await AuthService.register(username, password, email);
+      
+      if (result.success && result.user) {
+        localStorage.setItem('chat_current_user', JSON.stringify(result.user));
+        setUser(result.user);
+        return true;
       }
-
-      // Hash password
-      const { hash: passwordHash } = await EncryptionService.hashPassword(password);
-
-      // Create new user
-      const newUser: User = {
-        id: StorageService.generateId(),
-        username,
-        email,
-        passwordHash,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Save user
-      StorageService.saveUser(newUser);
-      StorageService.setCurrentUser(newUser);
-      setUser(newUser);
-
-      return true;
+      
+      return false;
     } catch (error) {
       console.error('Registration error:', error);
       return false;
@@ -70,28 +54,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
 
-      // Find user
-      const existingUser = StorageService.getUserByUsername(username);
-      if (!existingUser) {
-        throw new Error('User not found');
+      const result = await AuthService.login(username, password);
+      
+      if (result.success && result.user) {
+        localStorage.setItem('chat_current_user', JSON.stringify(result.user));
+        setUser(result.user);
+        return true;
       }
-
-      // Extract salt from stored password hash
-      const storedHash = existingUser.passwordHash;
-      const salt = storedHash.slice(-32); // Last 32 chars are salt
-      const hash = storedHash.slice(0, -32); // First part is hash
-
-      // Verify password
-      const isValid = await EncryptionService.verifyPassword(password, hash, salt);
-      if (!isValid) {
-        throw new Error('Invalid password');
-      }
-
-      // Set current user
-      StorageService.setCurrentUser(existingUser);
-      setUser(existingUser);
-
-      return true;
+      
+      return false;
     } catch (error) {
       console.error('Login error:', error);
       return false;
@@ -101,7 +72,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
-    StorageService.clearCurrentUser();
+    localStorage.removeItem('chat_current_user');
     setUser(null);
   };
 
