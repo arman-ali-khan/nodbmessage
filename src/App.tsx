@@ -7,13 +7,17 @@ import { RegisterForm } from './components/Auth/RegisterForm';
 import { ChatWindow } from './components/Chat/ChatWindow';
 import { useInviteHandler } from './hooks/useInviteHandler';
 
+const AuthenticatedChatView: React.FC = () => {
+  // Handle invite links - now safely inside ChatProvider
+  useInviteHandler();
+  
+  return <ChatWindow />;
+};
+
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   
-  // Handle invite links
-  useInviteHandler();
-
   // Check for invite code and prompt registration/login if not authenticated
   useEffect(() => {
     if (!user && !isLoading) {
@@ -48,7 +52,7 @@ const AppContent: React.FC = () => {
 
   return (
     <ChatProvider>
-      <ChatWindow />
+      <AuthenticatedChatView />
     </ChatProvider>
   );
 };
