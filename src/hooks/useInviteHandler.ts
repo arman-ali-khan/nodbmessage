@@ -1,15 +1,18 @@
 import { useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useChat } from '../contexts/ChatContext';
+import { useRouter } from './useRouter';
 import { StorageService } from '../utils/storage';
 
 export const useInviteHandler = () => {
   const { user } = useAuth();
-  const { joinRoom } = useChat();
+  const { navigateToRoom, isRoomPath } = useRouter();
 
   useEffect(() => {
     const handleInviteFromUrl = async () => {
       if (!user) return;
+
+      // Skip invite handling if already on a room path
+      if (isRoomPath()) return;
 
       const urlParams = new URLSearchParams(window.location.search);
       const inviteCode = urlParams.get('invite');
@@ -21,13 +24,12 @@ export const useInviteHandler = () => {
         if (room) {
           // Check if room is not full
           if (room.participants.length < room.maxParticipants || room.participants.includes(user.id)) {
-            const success = await joinRoom(room.id);
-            if (success) {
-              // Clear invite from URL without reloading
-              window.history.replaceState({}, document.title, window.location.pathname);
-            } else {
-              console.error('Failed to join room');
-            }
+            // Navigate to room page and clear invite from URL
+            navigateToRoom(room.id);
+            // Clear the invite parameter from URL
+            const newUrl = new URL(window.location.href);
+            newUrl.searchParams.delete('invite');
+            window.history.replaceState({}, '', newUrl.toString());
           } else {
             console.error('Room is full');
             // You might want to show a modal or notification here
@@ -40,5 +42,5 @@ export const useInviteHandler = () => {
     };
 
     handleInviteFromUrl();
-  }, [user, joinRoom]);
+  }, [user, navigateToRoom, isRoomPath]);
 };

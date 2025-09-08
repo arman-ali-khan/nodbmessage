@@ -2,16 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ChatProvider } from './contexts/ChatContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { useRouter } from './hooks/useRouter';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegisterForm } from './components/Auth/RegisterForm';
-import { ChatWindow } from './components/Chat/ChatWindow';
+import { HomePage } from './components/Pages/HomePage';
+import { RoomPage } from './components/Pages/RoomPage';
 import { useInviteHandler } from './hooks/useInviteHandler';
 
-const AuthenticatedChatView: React.FC = () => {
+const AuthenticatedView: React.FC = () => {
+  const { isRoomPath } = useRouter();
+  
   // Handle invite links - now safely inside ChatProvider
   useInviteHandler();
   
-  return <ChatWindow />;
+  return (
+    <ChatProvider>
+      {isRoomPath ? <RoomPage /> : <HomePage />}
+    </ChatProvider>
+  );
 };
 
 const AppContent: React.FC = () => {
@@ -50,11 +58,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  return (
-    <ChatProvider>
-      <AuthenticatedChatView />
-    </ChatProvider>
-  );
+  return <AuthenticatedView />;
 };
 
 function App() {
