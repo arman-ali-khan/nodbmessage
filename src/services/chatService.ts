@@ -204,30 +204,41 @@ export class ChatService {
 
   static async getRoomParticipants(roomId: string): Promise<User[]> {
     try {
-      const { data, error } = await supabase
+      // First, get the user IDs from room_participants
+      const { data: participantData, error: participantError } = await supabase
         .from('room_participants')
-        .select(`
-          users (
-            id,
-            username,
-            email,
-            password_hash,
-            created_at
-          )
-        `)
+        .select('user_id')
         .eq('room_id', roomId);
 
-      if (error) {
-        console.error('Error fetching room participants:', error);
+      if (participantError) {
+        console.error('Error fetching room participants:', participantError);
         return [];
       }
 
-      return data.map((item: any) => ({
-        id: item.users.id,
-        username: item.users.username,
-        email: item.users.email,
-        passwordHash: item.users.password_hash,
-        createdAt: item.users.created_at,
+      if (!participantData || participantData.length === 0) {
+        return [];
+      }
+
+      // Extract user IDs
+      const userIds = participantData.map(p => p.user_id);
+
+      // Second, get user details for these IDs (excluding password_hash for security)
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, username, email, created_at')
+        .in('id', userIds);
+
+      if (userError) {
+        console.error('Error fetching user details:', userError);
+        return [];
+      }
+
+      return userData.map(user => ({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        passwordHash: '', // Don't expose password hash to client
+        createdAt: user.created_at,
       }));
     } catch (error) {
       console.error('Error fetching room participants:', error);

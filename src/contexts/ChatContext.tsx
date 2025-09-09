@@ -27,53 +27,56 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [isTyping, setIsTyping] = useState(false);
   const socketService = SocketService.getInstance();
 
-  // Connect to socket when user is available
+  // Set up Socket.IO connection and message handling
   useEffect(() => {
-    if (user) {
-      socketService.connect(user.id, user.username);
-    }
+    if (!user) return;
 
-    return () => {
-      socketService.disconnect();
-    };
-  }, [user]);
+    // Connect to socket server
+    socketService.connect(user.id, user.username);
 
-  // Listen for real-time messages
-  useEffect(() => {
-    if (!currentRoom) return;
+    // Set up message handlers
+    socketService.onMessage((message: Message) => {
+      setMessages(prev => [...prev, message]);
+    });
 
-    const handleMessage = (message: Message) => {
-      if (message.roomId === currentRoom.id) {
-        setMessages(prev => [...prev, message]);
-      }
-    };
-
-    const handleUserJoined = (data: { userId: string; username: string }) => {
-      // Refresh participants when someone joins
+    socketService.onUserJoined((data: { userId: string; username: string }) => {
+      console.log(`${data.username} joined the room`);
+      // Refresh participants list
       if (currentRoom) {
         loadParticipants(currentRoom);
       }
-    };
+    });
 
-    const handleUserLeft = (data: { userId: string; username: string }) => {
-      // Refresh participants when someone leaves
+    socketService.onUserLeft((data: { userId: string; username: string }) => {
+      console.log(`${data.username} left the room`);
+      // Refresh participants list
       if (currentRoom) {
         loadParticipants(currentRoom);
       }
-    };
-
-    socketService.onMessage(handleMessage);
-    socketService.onUserJoined(handleUserJoined);
-    socketService.onUserLeft(handleUserLeft);
-    socketService.joinRoom(currentRoom.id);
+    });
 
     return () => {
       socketService.offMessage();
       socketService.offUserJoined();
       socketService.offUserLeft();
-      socketService.leaveRoom(currentRoom.id);
+      socketService.disconnect();
     };
-  }, [currentRoom]);
+  }, [user]);
+
+  // Handle room changes
+  useEffect(() => {
+    if (currentRoom && user) {
+      // Clear previous messages when switching rooms
+      setMessages([]);
+      
+      // Join the new room via socket
+      socketService.joinRoom(currentRoom.id);
+      
+      // Load participants
+      loadParticipants(currentRoom);
+    }
+  }, [currentRoom, user]);
+
 
   const loadParticipants = (room: ChatRoom) => {
     // Load participants from Supabase
@@ -97,8 +100,6 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
       }
 
       setCurrentRoom(room);
-      setMessages([]); // Clear messages for new room
-      loadParticipants(room);
 
       return true;
     } catch (error) {
@@ -109,7 +110,10 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   const leaveRoom = () => {
     if (currentRoom && user) {
+      // Leave room via socket
       socketService.leaveRoom(currentRoom.id);
+      
+      // Leave room in database
       ChatService.leaveRoom(currentRoom.id, user.id);
     }
     
@@ -128,14 +132,16 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         senderId: user.id,
         senderUsername: user.username,
         content,
-        encryptedContent: '', // Not used for real-time messaging
+        encryptedContent: content,
         timestamp: new Date().toISOString(),
-        iv: '', // Not used for real-time messaging
+        iv: 'not-encrypted',
       };
 
-      // Send message via Socket.IO
-      socketService.sendMessage(message);
+      // Add message to local state immediately
+      setMessages(prev => [...prev, message]);
 
+      // Send message via Socket.IO to other participants
+      socketService.sendMessage(message);
     } catch (error) {
       console.error('Error sending message:', error);
     }
