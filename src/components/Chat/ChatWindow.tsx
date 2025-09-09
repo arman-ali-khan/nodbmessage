@@ -75,7 +75,7 @@ export const ChatWindow: React.FC = () => {
         <div className="flex items-center space-x-2 text-yellow-800 dark:text-yellow-300">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           <p className="text-sm font-medium">
-            Closing this window will delete all messages permanently.
+            Messages are sent in real-time and not stored permanently.
           </p>
         </div>
       </div>

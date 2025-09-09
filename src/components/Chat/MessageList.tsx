@@ -17,9 +17,9 @@ export const MessageList: React.FC = () => {
       {messages.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <div className="text-center">
-            <p className="text-gray-500 dark:text-gray-400 text-lg">No messages yet</p>
+            <p className="text-gray-500 dark:text-gray-400 text-lg">No messages in this session</p>
             <p className="text-gray-400 dark:text-gray-500 text-sm mt-1">
-              Send the first message to start the conversation
+              Messages are sent in real-time and not stored permanently
             </p>
           </div>
         </div>

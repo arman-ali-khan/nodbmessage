@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ChatRoom, Message, User, ChatContextType } from '../types';
 import { StorageService } from '../utils/storage';
-import { EncryptionService } from '../utils/encryption';
 import { useAuth } from './AuthContext';
 import { ChatService } from '../services/chatService';
-import { AuthService } from '../services/authService';
+import { SocketService } from '../services/socketService';
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
 
@@ -26,61 +25,55 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [participants, setParticipants] = useState<User[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const socketService = SocketService.getInstance();
 
-  // Listen for storage changes to sync messages across tabs
+  // Connect to socket when user is available
+  useEffect(() => {
+    if (user) {
+      socketService.connect(user.id, user.username);
+    }
+
+    return () => {
+      socketService.disconnect();
+    };
+  }, [user]);
+
+  // Listen for real-time messages
   useEffect(() => {
     if (!currentRoom) return;
 
-    // Load messages initially
-    loadMessages(currentRoom.id);
-
-    // Set up polling for new messages
-    const interval = setInterval(() => {
-      loadMessages(currentRoom.id);
-    }, 2000); // Poll every 2 seconds
-
-    return () => clearInterval(interval);
-  }, [currentRoom]);
-
-  const loadMessages = async (roomId: string) => {
-    try {
-      // Get messages from Supabase
-      const dbMessages = await ChatService.getMessages(roomId);
-      const roomKey = StorageService.getRoomKey(roomId);
-      
-      if (!roomKey) {
-        setMessages(dbMessages);
-        return;
+    const handleMessage = (message: Message) => {
+      if (message.roomId === currentRoom.id) {
+        setMessages(prev => [...prev, message]);
       }
+    };
 
-      // Decrypt messages for display
-      const cryptoKey = await EncryptionService.importKey(roomKey);
-      const decryptedMessages = await Promise.all(
-        dbMessages.map(async (msg) => {
-          try {
-            // If content is already decrypted, use it; otherwise decrypt
-            if (msg.content && msg.content !== '[Encrypted]') {
-              return msg;
-            }
-            
-            const decryptedContent = await EncryptionService.decrypt(
-              msg.encryptedContent,
-              cryptoKey,
-              msg.iv
-            );
-            return { ...msg, content: decryptedContent };
-          } catch (error) {
-            console.error('Error decrypting message:', error);
-            return { ...msg, content: '[Decryption failed]' };
-          }
-        })
-      );
-      
-      setMessages(decryptedMessages);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-    }
-  };
+    const handleUserJoined = (data: { userId: string; username: string }) => {
+      // Refresh participants when someone joins
+      if (currentRoom) {
+        loadParticipants(currentRoom);
+      }
+    };
+
+    const handleUserLeft = (data: { userId: string; username: string }) => {
+      // Refresh participants when someone leaves
+      if (currentRoom) {
+        loadParticipants(currentRoom);
+      }
+    };
+
+    socketService.onMessage(handleMessage);
+    socketService.onUserJoined(handleUserJoined);
+    socketService.onUserLeft(handleUserLeft);
+    socketService.joinRoom(currentRoom.id);
+
+    return () => {
+      socketService.offMessage();
+      socketService.offUserJoined();
+      socketService.offUserLeft();
+      socketService.leaveRoom(currentRoom.id);
+    };
+  }, [currentRoom]);
 
   const loadParticipants = (room: ChatRoom) => {
     // Load participants from Supabase
@@ -103,17 +96,9 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         throw new Error(joinResult.error || 'Failed to join room');
       }
 
-      // Generate or get room encryption key
-      let roomKeyString = StorageService.getRoomKey(roomId);
-      if (!roomKeyString) {
-        const roomKey = await EncryptionService.generateKey();
-        roomKeyString = await EncryptionService.exportKey(roomKey);
-        StorageService.saveRoomKey(roomId, roomKeyString);
-      }
-
       setCurrentRoom(room);
+      setMessages([]); // Clear messages for new room
       loadParticipants(room);
-      await loadMessages(roomId);
 
       return true;
     } catch (error) {
@@ -124,7 +109,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   const leaveRoom = () => {
     if (currentRoom && user) {
-      // Leave room in Supabase
+      socketService.leaveRoom(currentRoom.id);
       ChatService.leaveRoom(currentRoom.id, user.id);
     }
     
@@ -137,34 +122,19 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     if (!currentRoom || !user) return;
 
     try {
-      const roomKeyString = StorageService.getRoomKey(currentRoom.id);
-      if (!roomKeyString) throw new Error('Room key not found');
-
-      const roomKey = await EncryptionService.importKey(roomKeyString);
-      const { encrypted, iv } = await EncryptionService.encrypt(content, roomKey);
-
       const message: Message = {
         id: StorageService.generateId(),
         roomId: currentRoom.id,
         senderId: user.id,
         senderUsername: user.username,
-        content, // Keep unencrypted for local display
-        encryptedContent: encrypted,
+        content,
+        encryptedContent: '', // Not used for real-time messaging
         timestamp: new Date().toISOString(),
-        iv,
+        iv: '', // Not used for real-time messaging
       };
 
-      // Save message to Supabase
-      const saveResult = await ChatService.saveMessage(message);
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || 'Failed to save message');
-      }
-
-      // Also save locally as backup
-      StorageService.saveMessage(message);
-      
-      // Immediately refresh messages to show the new message
-      await loadMessages(currentRoom.id);
+      // Send message via Socket.IO
+      socketService.sendMessage(message);
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -178,11 +148,6 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
     if (!result.success || !result.room) {
       throw new Error(result.error || 'Failed to create room');
     }
-
-    // Generate room encryption key
-    const roomKey = await EncryptionService.generateKey();
-    const roomKeyString = await EncryptionService.exportKey(roomKey);
-    StorageService.saveRoomKey(result.room.id, roomKeyString);
 
     return result.room;
   };
