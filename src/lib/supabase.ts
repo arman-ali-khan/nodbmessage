@@ -82,6 +82,38 @@ export interface Database {
           joined_at?: string;
         };
       };
+      messages: {
+        Row: {
+          id: string;
+          room_id: string;
+          sender_id: string;
+          sender_username: string;
+          content: string;
+          encrypted_content: string;
+          iv: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          room_id: string;
+          sender_id: string;
+          sender_username: string;
+          content: string;
+          encrypted_content: string;
+          iv: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          room_id?: string;
+          sender_id?: string;
+          sender_username?: string;
+          content?: string;
+          encrypted_content?: string;
+          iv?: string;
+          created_at?: string;
+        };
+      };
     };
   };
 }

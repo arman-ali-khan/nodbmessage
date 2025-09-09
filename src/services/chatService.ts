@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ChatRoom, User } from '../types';
 import { StorageService } from '../utils/storage';
+import { Message } from '../types';
 
 export class ChatService {
   static async createRoom(name: string, maxParticipants: number, createdBy: string): Promise<{ success: boolean; room?: ChatRoom; error?: string }> {
@@ -165,6 +166,11 @@ export class ChatService {
         });
 
       if (error) {
+        // Check if error is due to user already being a participant (unique constraint violation)
+        if (error.code === '23505') {
+          // User is already a participant, consider this a success
+          return { success: true };
+        }
         console.error('Error joining room:', error);
         return { success: false, error: 'Failed to join room' };
       }
@@ -226,6 +232,62 @@ export class ChatService {
     } catch (error) {
       console.error('Error fetching room participants:', error);
       return [];
+    }
+  }
+
+  static async getMessages(roomId: string): Promise<Message[]> {
+    try {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('room_id', roomId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching messages:', error);
+        return [];
+      }
+
+      return data.map(msg => ({
+        id: msg.id,
+        roomId: msg.room_id,
+        senderId: msg.sender_id,
+        senderUsername: msg.sender_username,
+        content: msg.content,
+        encryptedContent: msg.encrypted_content,
+        timestamp: msg.created_at,
+        iv: msg.iv,
+      }));
+    } catch (error) {
+      console.error('Error fetching messages:', error);
+      return [];
+    }
+  }
+
+  static async saveMessage(message: Message): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .insert({
+          id: message.id,
+          room_id: message.roomId,
+          sender_id: message.senderId,
+          sender_username: message.senderUsername,
+          content: message.content,
+          encrypted_content: message.encryptedContent,
+          iv: message.iv,
+          created_at: message.timestamp,
+        });
+
+      if (error) {
+        console.error('Error saving message:', error);
+        return { success: false, error: 'Failed to save message' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error saving message:', error);
+      return { success: false, error: 'Failed to save message' };
     }
   }
 }

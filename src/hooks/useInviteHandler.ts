@@ -12,7 +12,7 @@ export const useInviteHandler = () => {
       if (!user) return;
 
       // Skip invite handling if already on a room path
-      if (isRoomPath()) return;
+      if (isRoomPath) return;
 
       const urlParams = new URLSearchParams(window.location.search);
       const inviteCode = urlParams.get('invite');

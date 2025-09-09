@@ -29,41 +29,40 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   // Listen for storage changes to sync messages across tabs
   useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key?.startsWith('chat_messages_') && currentRoom) {
-        const roomId = e.key.replace('chat_messages_', '');
-        if (roomId === currentRoom.id) {
-          loadMessages(currentRoom.id);
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [currentRoom]);
-
-  // Auto-refresh messages
-  useEffect(() => {
     if (!currentRoom) return;
 
+    // Load messages initially
+    loadMessages(currentRoom.id);
+
+    // Set up polling for new messages
     const interval = setInterval(() => {
       loadMessages(currentRoom.id);
-    }, 1000);
+    }, 2000); // Poll every 2 seconds
 
     return () => clearInterval(interval);
   }, [currentRoom]);
 
   const loadMessages = async (roomId: string) => {
-    const storedMessages = StorageService.getMessages(roomId);
-    const roomKey = StorageService.getRoomKey(roomId);
-    
-    if (!roomKey) return;
-
     try {
+      // Get messages from Supabase
+      const dbMessages = await ChatService.getMessages(roomId);
+      const roomKey = StorageService.getRoomKey(roomId);
+      
+      if (!roomKey) {
+        setMessages(dbMessages);
+        return;
+      }
+
+      // Decrypt messages for display
       const cryptoKey = await EncryptionService.importKey(roomKey);
       const decryptedMessages = await Promise.all(
-        storedMessages.map(async (msg) => {
+        dbMessages.map(async (msg) => {
           try {
+            // If content is already decrypted, use it; otherwise decrypt
+            if (msg.content && msg.content !== '[Encrypted]') {
+              return msg;
+            }
+            
             const decryptedContent = await EncryptionService.decrypt(
               msg.encryptedContent,
               cryptoKey,
@@ -155,13 +154,17 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         iv,
       };
 
+      // Save message to Supabase
+      const saveResult = await ChatService.saveMessage(message);
+      if (!saveResult.success) {
+        throw new Error(saveResult.error || 'Failed to save message');
+      }
+
+      // Also save locally as backup
       StorageService.saveMessage(message);
       
-      // Trigger storage event for other tabs
-      window.dispatchEvent(new StorageEvent('storage', {
-        key: `chat_messages_${currentRoom.id}`,
-        newValue: JSON.stringify([...messages, message]),
-      }));
+      // Immediately refresh messages to show the new message
+      await loadMessages(currentRoom.id);
 
     } catch (error) {
       console.error('Error sending message:', error);
